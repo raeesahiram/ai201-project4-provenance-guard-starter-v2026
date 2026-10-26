@@ -47,9 +47,9 @@
 3. **`detector.model_signal` in `detector.py`** runs the local language model
    over the text and adds a 0–1 predictability-based score; higher means more
    AI-like. If the model is unavailable, the route returns `503`.
-4. **`stylometry.style_signal` in `stylometry.py`** is intended to add a
-   second 0–1 score based on sentence-length variation and vocabulary
-   repetition, without interpreting meaning.
+4. **`stylometry.style_signal` in `stylometry.py`** adds a second 0–1 score
+   from sentence-length variation, vocabulary repetition, and punctuation
+   density, without interpreting meaning.
 5. **`scoring.combine_signals` in `scoring.py`** averages the two scores using
    the configured weights, currently 0.5 for each. Disagreement pulls the
    result toward the middle rather than letting either score decide alone.
@@ -108,9 +108,9 @@ signal's limitation, not evidence that the excerpt was AI-generated.
 
 | Probe | Model score | Style score | What happened |
 |---|---:|---:|---|
-| AI-style conventional sample | 0.3751 | 0.4675 | Close agreement; both remain in the unsure band |
-| Personal-style sample (authorship not independently verified) | 0.5331 | 0.4215 | Signals split by 0.1116; the average is 0.4773 |
-| Borderline-style sample (not ground truth) | 0.4216 | 0.4399 | Close agreement; both remain in the unsure band |
+| AI-style conventional sample | 0.3751 | 0.4450 | Close agreement; both remain in the unsure band |
+| Personal-style sample (authorship not independently verified) | 0.5331 | 0.4596 | Signals split by 0.0735; the average is 0.49635 |
+| Borderline-style sample (not ground truth) | 0.4216 | 0.4785 | Close agreement; both remain in the unsure band |
 
 The personal-style sample is the clearest split in this set: the model leans
 more AI-like than the style score. The model and style score both remain
@@ -126,22 +126,20 @@ meaning. It computes the coefficient of variation for sentence word counts
 (sample standard deviation divided by the mean) and the type-token ratio
 (unique words divided by total words). It turns the variation into an
 AI-like score with `1 / (1 + variation)` and inverts the type-token ratio
-(`1 - ratio`) so repeated vocabulary raises the score. The style score is the
-mean of those two values; higher means more AI-like. If there are fewer than
-two sentences, variation contributes a neutral `0.5`.
-
-Punctuation density (punctuation characters per word) is computed and printed
-as a diagnostic, but is not included in the score: punctuation frequency
-alone has no dependable direction without calibration evidence.
+(`1 - ratio`) so repeated vocabulary raises the score. It also measures
+punctuation characters per word and normalizes that rate as
+`min(density / 0.2, 1.0)`. The style score is the equal-weight mean of these
+three components; higher means more AI-like. If there are fewer than two
+sentences, variation contributes a neutral `0.5`.
 
 **Why that might differ between human and AI writing:**
 
-Generated prose can use a more even sentence rhythm and narrower vocabulary
-than an individual writer's naturally uneven style. Sentence-length variation,
-repeated words, and punctuation patterns may therefore differ on average.
-The score uses the first two tendencies; punctuation remains visible for
-inspection only. These are tendencies, not reliable rules about an individual
-author.
+Generated prose can use a more even sentence rhythm, narrower vocabulary,
+and more regular punctuation than an individual writer's naturally uneven
+style. Sentence-length variation, repeated words, and punctuation density may
+therefore differ on average. These are tendencies, not reliable rules about
+an individual author; the punctuation direction and its `0.2` saturation
+point are heuristic choices, not calibrated authorship evidence.
 
 **What it can't see:**
 
@@ -156,23 +154,21 @@ work.
 
 | Input | Model score | Style score | Combined score | Observation |
 |---|---:|---:|---:|---|
-| Original AI-generated conventional paragraph | 0.6651 | 0.4724 | 0.56875 | Signals disagree; average stays unsure |
-| Human-written Dickens excerpt | 0.9583 | 0.5694 | 0.76385 | Both signals lean AI-like, despite known human authorship |
-| Formal human-written Constitution excerpt | 0.9853 | 0.3846 | 0.68495 | Strong disagreement; average still crosses the AI threshold |
-| Lightly edited AI-generated paragraph | 0.5432 | 0.3945 | 0.46885 | Both signals stay in the unsure range |
+| Original AI-generated conventional paragraph | 0.6651 | 0.5277 | 0.59640 | Signals disagree; average stays unsure |
+| Human-written Dickens excerpt | 0.9583 | 0.6574 | 0.80785 | Both signals lean AI-like, despite known human authorship |
+| Formal human-written Constitution excerpt | 0.9853 | 0.5128 | 0.74905 | Both signals combine above the AI threshold |
+| Lightly edited AI-generated paragraph | 0.5432 | 0.5529 | 0.54805 | Both signals stay in the unsure range |
 
-For the Constitution excerpt, the signals disagree strongly: the model score
-is very AI-like while style is much lower, but the equal-weight average still
-crosses the AI threshold. The Dickens excerpt is a second failure case: both
-scores lean AI-like for known human writing. These examples show that neither
-score is proof of authorship.
+The Dickens excerpt is a clear failure case: both scores lean AI-like for
+known human writing. The formal Constitution excerpt also lands in the AI
+band. These examples show that neither score is proof of authorship.
 
 ### A false-positive trace
 
 The U.S. Constitution preamble excerpt is human-written, but the model
 returned `model_score = 0.9853` for it. The style signal returned
-`style_score = 0.3846`, a substantial disagreement. With equal weights, the
-combined score was `(0.5 × 0.9853) + (0.5 × 0.3846) = 0.68495`. Since
+`style_score = 0.5128`. With equal weights, the combined score was
+`(0.5 × 0.9853) + (0.5 × 0.5128) = 0.74905`. Since
 `AI_THRESHOLD` is `0.65`, the reader saw the `ai` guess and this label:
 
 > The signals suggest this text may be AI-generated; this is not proof of authorship.
@@ -260,7 +256,7 @@ calibrated.
 **A case where my two signals split, and what my rule does with it:**
 
 The formal Constitution excerpt scored `0.9853` on the model signal and
-`0.3846` on the style signal. Their equal-weight average, `0.68495`, is lower
+`0.5128` on the style signal. Their equal-weight average, `0.74905`, is lower
 than the model score but still crosses the `0.65` AI threshold. Averaging
 moderates disagreement; it does not guarantee a correct result.
 
@@ -291,13 +287,15 @@ following input. A label reflects the score band, not verified authorship.
 
 | Result | Text submitted (excerpt) | Combined score | Content ID |
 |---|---|---:|---|
-| `human` | “Petrichor, susurrus, defenestration, ultracrepidarian, callipygian…” | 0.21775 | `e3a5877e-4213-49fe-9906-052736e8c2bf` |
-| `unsure` | “A successful project begins with a clear plan. The plan identifies the main goal…” | 0.56875 | `23e97593-b541-4a67-9f0a-228d638cfb83` |
-| `ai` | The human-written U.S. Constitution preamble excerpt shown below | 0.68495 | `87ca4a72-fe58-418d-a707-75880dc62004` |
+| `human` | “Petrichor, susurrus, defenestration, ultracrepidarian, callipygian…” | 0.34275 | `5675a1d2-ebd8-446f-acee-01059cef0c74` |
+| `unsure` | “A successful project begins with a clear plan. The plan identifies the main goal…” | 0.59640 | `40853339-e6a2-4059-9997-3a14ca04a619` |
+| `ai` | The human-written U.S. Constitution preamble excerpt shown below | 0.74905 | `34674feb-1ad3-4e28-8099-862cae549213` |
 
 The `ai` result is a known false positive. The human-band probe is unusual
 text and is not a claim about its authorship. These results show all three
 score bands are reachable, not that the detector reliably identifies authors.
+As a boundary check, `0.51` maps to `unsure`, while `0.95` maps to `ai`; the
+label is based on score ranges, not a flip at `0.5`.
 
 
 ---
@@ -317,18 +315,18 @@ score bands are reachable, not that the detector reliably identifies authors.
 ```bash
 $ curl -X POST http://127.0.0.1:5000/submit \
   -H "Content-Type: application/json" \
-  -d '{"text":"We the People of the United States, in Order to form a more perfect Union, establish Justice, insure domestic Tranquility, provide for the common defence, promote the general Welfare, and secure the Blessings of Liberty to ourselves and our Posterity, do ordain and establish this Constitution for the United States of America.","creator_id":"readme-human-sample-style-v2"}'
+  -d '{"text":"We the People of the United States, in Order to form a more perfect Union, establish Justice, insure domestic Tranquility, provide for the common defence, promote the general Welfare, and secure the Blessings of Liberty to ourselves and our Posterity, do ordain and establish this Constitution for the United States of America.","creator_id":"final-label-ai"}'
 ```
 
 ```json
 {
-  "combined_score": 0.68495,
-  "confidence": 0.68495,
-  "content_id": "93ca2454-183a-40f3-bf03-3dd62f852898",
+  "combined_score": 0.74905,
+  "confidence": 0.74905,
+  "content_id": "34674feb-1ad3-4e28-8099-862cae549213",
   "guess": "ai",
   "label": "The signals suggest this text may be AI-generated; this is not proof of authorship.",
   "model_score": 0.9853,
-  "style_score": 0.3846
+  "style_score": 0.5128
 }
 ```
 
@@ -337,12 +335,12 @@ $ curl -X POST http://127.0.0.1:5000/submit \
 ```bash
 $ curl -X POST http://127.0.0.1:5000/appeal \
   -H "Content-Type: application/json" \
-  -d '{"content_id":"93ca2454-183a-40f3-bf03-3dd62f852898","reasoning":"I wrote this text myself and request a review of the AI label."}'
+  -d '{"content_id":"34674feb-1ad3-4e28-8099-862cae549213","reasoning":"I wrote this text myself and request review of the AI label."}'
 ```
 
 ```json
 {
-  "content_id": "93ca2454-183a-40f3-bf03-3dd62f852898",
+  "content_id": "34674feb-1ad3-4e28-8099-862cae549213",
   "message": "Your appeal has been received and is under review.",
   "status": "under_review"
 }
@@ -352,29 +350,29 @@ $ curl -X POST http://127.0.0.1:5000/appeal \
 
 ```bash
 $ curl -sS "http://127.0.0.1:5000/log" | python -c \
-  'import json,sys; print(json.dumps([e for e in json.load(sys.stdin)["entries"] if e.get("content_id") == "93ca2454-183a-40f3-bf03-3dd62f852898"], indent=2))'
+  'import json,sys; print(json.dumps([e for e in json.load(sys.stdin)["entries"] if e.get("content_id") == "34674feb-1ad3-4e28-8099-862cae549213"], indent=2))'
 ```
 
 ```json
 [
   {
-    "combined_score": 0.68495,
-    "content_id": "93ca2454-183a-40f3-bf03-3dd62f852898",
-    "creator_id": "readme-human-sample-style-v2",
+    "combined_score": 0.74905,
+    "content_id": "34674feb-1ad3-4e28-8099-862cae549213",
+    "creator_id": "final-label-ai",
     "guess": "ai",
     "label": "The signals suggest this text may be AI-generated; this is not proof of authorship.",
     "model_score": 0.9853,
     "status": "decided",
-    "style_score": 0.3846,
-    "timestamp": "2026-10-26T02:42:47+00:00"
+    "style_score": 0.5128,
+    "timestamp": "2026-10-26T02:57:51+00:00"
   },
   {
-    "content_id": "93ca2454-183a-40f3-bf03-3dd62f852898",
-    "creator_id": "readme-human-sample-style-v2",
+    "content_id": "34674feb-1ad3-4e28-8099-862cae549213",
+    "creator_id": "final-label-ai",
     "event": "appeal",
-    "reasoning": "I wrote this text myself and request a review of the AI label.",
+    "reasoning": "I wrote this text myself and request review of the AI label.",
     "status": "under_review",
-    "timestamp": "2026-10-26T02:47:30+00:00"
+    "timestamp": "2026-10-26T02:57:58+00:00"
   }
 ]
 ```
@@ -390,15 +388,33 @@ nonzero scores and the expected label bands.
 
 **Moment 1**
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- *What I asked for:* Help implement `POST /submit` using the existing
+  detector and audit helpers, while keeping `/ping` unchanged.
+- *What came back:* A route that validates the JSON fields, calls both
+  signals, combines and labels their scores, generates a content ID, and
+  records the decision. It also handles invalid input and detector failures.
+- *What I changed:* I verified `/ping`, exercised successful and failing
+  requests, and kept the explicit `400`/`503` responses and audit logging.
+  I made sure the response exposes both signal scores as well as the combined
+  score so later evaluations can inspect each stage.
 
 **Moment 2**
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- *What I asked for:* Help build the style signal, choose how it combines
+  sentence shape, vocabulary repetition, and punctuation, and check the
+  proposed scoring rule against clearly AI-like, human, formal, and lightly
+  edited examples.
+- *What came back:* A normalized style score and a simple 50/50 weighted
+  average in `scoring.py::combine_signals`. The calibration showed that the
+  model could score known human writing as AI-like and that the style score
+  did not reliably correct it.
+- *What I changed:* I kept the equal weights as a transparent starting rule
+  and documented the false-positive results rather than claiming reliable
+  detection. I added punctuation density as a normalized third style
+  component, while documenting its heuristic direction and saturation point
+  rather than treating them as calibrated authorship evidence. I also used
+  the detected model-load race to add synchronization and rechecked
+  concurrent submissions.
 
 <!-- ═══════════════════════ UNIT 8 — THE TEST ═══════════════════════ -->
 

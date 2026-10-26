@@ -5,9 +5,8 @@ Signal one reads the text for meaning. This one measures it *as text* — the
 shape of it, without understanding a word.
 
 The measurements describe the text without interpreting its meaning. The
-style score combines sentence-length variation and vocabulary repetition.
-Punctuation density is also reported as a diagnostic, but is not included in
-the score because punctuation frequency alone has no dependable direction.
+style score combines sentence-length variation, vocabulary repetition, and
+punctuation density.
 
     sentence_length_spread   do sentences vary in length, or march in step?
     type_token_ratio         how much of the vocabulary repeats?
@@ -86,6 +85,7 @@ def punctuation_density(text: str) -> float:
 
     Returns:
         Punctuation characters per word; returns 0.0 when there are no words.
+        This raw measure is unbounded.
     """
     word_count = len(words(text))
     if not word_count:
@@ -102,12 +102,11 @@ def style_signal(text: str) -> float:
     """
     The style signal as a 0–1 score. **Higher means more likely AI.**
 
-    The score averages two bounded measurements. Low sentence-length
-    variation and repeated vocabulary each raise the AI-like score. With
-    fewer than two sentences, sentence variation is treated as neutral.
-
-    Punctuation density is reported separately; its direction is too
-    ambiguous to include without calibration data.
+    The score equally averages three bounded components. Low sentence-length
+    variation, repeated vocabulary, and denser punctuation raise the score.
+    Punctuation density is saturated at 0.2 punctuation characters per word
+    before being normalized. With fewer than two sentences, sentence
+    variation is treated as neutral.
     """
     tokens = words(text)
     if not tokens:
@@ -124,7 +123,11 @@ def style_signal(text: str) -> float:
         variation_score = 1.0 / (1.0 + variation)
 
     repetition_score = 1.0 - type_token_ratio(text)
-    return round((variation_score + repetition_score) / 2.0, 4)
+    punctuation_score = min(punctuation_density(text) / 0.2, 1.0)
+    return round(
+        (variation_score + repetition_score + punctuation_score) / 3.0,
+        4,
+    )
 
 
 if __name__ == "__main__":
@@ -140,4 +143,4 @@ if __name__ == "__main__":
     print(f"type_token_ratio         {type_token_ratio(text)}")
     print(f"punctuation_density      {punctuation_density(text)}")
     print(f"style_signal             {style_signal(text)}   (higher = more likely AI)")
-    print("\nPunctuation density is diagnostic and is not included in style_signal.")
+    print("\nPunctuation density saturates at 0.2 marks per word in style_signal.")
