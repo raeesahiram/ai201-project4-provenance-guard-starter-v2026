@@ -68,7 +68,7 @@ sent it data, it sent something back.
 `/ping` still answers: if it does, the problem is in your handler; if it
 doesn't, it's the service itself, and that's a help-channel question.
 
-Then try the route you're going to build:
+Then try the submission route:
 
 ```bash
 curl -X POST http://127.0.0.1:5000/submit \
@@ -76,8 +76,9 @@ curl -X POST http://127.0.0.1:5000/submit \
   -d '{"text": "some writing", "creator_id": "me"}'
 ```
 
-It returns a `501` saying it isn't built yet. **That's the correct starting
-position.**
+It returns a JSON decision with the content ID, label, and both signal scores.
+If the local detector model has not been downloaded yet, the route returns
+`503`; run `python detector.py` as described above.
 
 ---
 
@@ -88,7 +89,7 @@ position.**
 | `POST /ping` | **works** | The example. Don't edit it |
 | `GET /health` | **works** | Is the service up, is the model loaded |
 | `GET /log` | **works** | The audit log, as JSON |
-| `POST /submit` | **you build it** | Milestones 3, 4, 5 |
+| `POST /submit` | **works** | Scores, labels, and logs submissions |
 | `POST /appeal` | **you build it** | Milestone 5 |
 
 ---
@@ -134,22 +135,17 @@ position.**
 
 ---
 
-## Building `/submit` in three passes
+## How `/submit` processes a request
 
-The ordering is deliberate. It's how you tell a broken route from a broken
-signal.
+The route validates the JSON object, checks that `text` and `creator_id` are
+non-empty strings, then runs the model signal and style signal. The two scores
+are combined, mapped to a guess and reader-facing label, and written to the
+audit log with a generated content ID.
 
-**Milestone 3.** Return a hardcoded response. Confirm `curl` gets it back
-**before** you add any logic. Then pull `text` and `creator_id` out. Then call
-one signal. Then log it.
-
-**Milestone 4.** Add the second signal. Combine them. Log both scores.
-
-**Milestone 5.** Turn the score into a label.
-
-> Test each signal from a terminal on its own before wiring it in. If you skip
-> that you'll spend an hour not knowing whether the route or the signal is
-> lying to you.
+Malformed JSON or missing/invalid fields return `400`. If the detector model
+cannot be loaded, the route returns `503` with setup information. The response
+includes `content_id`, `guess`, `confidence` (the combined score), `label`,
+`model_score`, and `style_score`.
 
 ---
 

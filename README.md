@@ -39,7 +39,26 @@
 <!-- The path a submission takes, from arriving to the label a reader sees.
      Six or seven steps — this is the trace you wrote in Milestone 1. -->
 
-
+1. **Request arrives at Flask** on `POST /submit` as a JSON object containing
+   `text` and `creator_id`.
+2. **Input validation in `app.py::submit`** checks that both fields are
+   non-empty strings. Invalid input is rejected with `400` and an audit-log
+   rejection entry.
+3. **`detector.model_signal` in `detector.py`** runs the local language model
+   over the text and adds a 0–1 predictability-based score; higher means more
+   AI-like. If the model is unavailable, the route returns `503`.
+4. **`stylometry.style_signal` in `stylometry.py`** is intended to add a
+   second 0–1 score based on text shape rather than meaning. It currently
+   returns the fixed placeholder `0.5`, so it does not yet distinguish
+   submissions.
+5. **`scoring.combine_signals` in `scoring.py`** averages the two scores using
+   the configured weights, currently 0.5 for each. Disagreement pulls the
+   result toward the middle rather than letting either score decide alone.
+6. **`scoring.score_to_label`** compares the combined score with the configured
+   thresholds and adds a machine-readable guess and reader-facing label.
+7. **`audit.log_decision` in `audit.py`** records the content ID, creator,
+   guesses, scores, label, and status; then Flask returns that decision as
+   JSON.
 
 ---
 
@@ -55,17 +74,112 @@
 
 **What it measures:**
 
+`detector.py` uses a local GPT-2 language model to estimate perplexity: how
+surprised the model is by the text. It maps lower perplexity (more predictable
+text) to a higher AI-likelihood score.
+
 **Why that might differ between human and AI writing:**
 
+Generated text is often made from likely next-word choices, so it may be
+predictable to a language model. Human writing can be less predictable because
+of unusual word choices, abrupt turns, or specific details.
+
 **What it can't see:**
+
+It cannot see who wrote the text. Predictability is not authorship: ordinary,
+plain writing, including writing by a second-language learner, can be
+predictable and score as AI-like. Conversely, unusual or ornate human writing
+can score as human-like. It also does not understand whether a claim is true
+or whether the writer used AI.
 
 ### Signal two — the style signal
 
 **What it measures:**
 
+`stylometry.py` is designed to measure the text's shape without reading its
+meaning: variation in sentence lengths, vocabulary repetition
+(type-token ratio), and punctuation density. Its intended output is a 0–1
+score where higher means more AI-like. The current `style_signal` is still a
+stub that always returns `0.5`; those measurements are not implemented yet.
+
 **Why that might differ between human and AI writing:**
 
+Generated prose can use a more even sentence rhythm and narrower vocabulary
+than an individual writer's naturally uneven style. Sentence-length variation,
+repeated words, and punctuation patterns may therefore differ on average.
+They are tendencies, not reliable rules about an individual author.
+
 **What it can't see:**
+
+It cannot see meaning, authorship, or whether a text is true. A person can
+change the measured shape without changing the ideas—for example, by breaking
+sentences up, adding typos, or including a quotation. Those changes can move
+the score without changing who wrote the work.
+
+### A false-positive trace
+
+Imagine a real writer who uses plain, common words and short, regular
+sentences. The model finds that writing predictable and returns
+`model_score = 0.82`. The current style stub returns `style_score = 0.50`.
+With the current equal weights, the combined score is
+`(0.5 × 0.82) + (0.5 × 0.50) = 0.66`. Since `AI_THRESHOLD` is `0.65`, the
+reader sees the `ai` guess and this label:
+
+> The signals suggest this text may be AI-generated; this is not proof of authorship.
+
+This is a false positive: the writer wrote the text themselves, but
+predictability pushed the score into the AI band. The intended remedy is to
+appeal with the content ID and their reasoning. **The appeal contract is
+described below, but `POST /appeal` is not implemented yet and currently
+returns `501`; the writer cannot complete that path in the running service
+today.**
+
+### Endpoint contracts
+
+`POST /submit`
+
+**Request JSON fields**
+
+| Field | Type | Required | Meaning |
+|---|---|---:|---|
+| `text` | string | yes | The text to score; must not be empty or whitespace-only |
+| `creator_id` | string | yes | The submitting writer's identifier; must not be empty or whitespace-only |
+
+**Successful response fields (`200`)**
+
+| Field | Type | Meaning |
+|---|---|---|
+| `content_id` | string | Generated UUID used to refer to this submission, including in an appeal |
+| `guess` | string | Machine-readable category: `human`, `unsure`, or `ai` |
+| `confidence` | number | The combined score from 0.0 to 1.0; currently the same value as `combined_score`, not a calibrated probability |
+| `label` | string | Reader-facing sentence explaining the result |
+| `model_score` | number | Detector signal score from 0.0 to 1.0 |
+| `style_score` | number | Style signal score from 0.0 to 1.0 |
+| `combined_score` | number | Weighted combination of the two signal scores |
+
+Invalid or missing fields return `400` with `error` and `message`. Text too short for the detector returns `400` with `error: "invalid_text"` and a `message`. If the detector cannot load, the route returns `503` with `error: "detector_unavailable"` and a `message`.
+
+`POST /appeal`
+
+**Request JSON fields**
+
+| Field | Type | Required | Meaning |
+|---|---|---:|---|
+| `content_id` | string | yes | The ID returned by `/submit` for the decision being challenged |
+| `reasoning` | string | yes | The writer's explanation of why they are appealing |
+
+**Intended successful response fields (`200`)**
+
+| Field | Type | Meaning |
+|---|---|---|
+| `content_id` | string | The decision under appeal |
+| `status` | string | `under_review`, confirming the appeal was recorded |
+| `message` | string | Confirmation that the appeal was received |
+
+The intended handler should return `400` for missing or invalid fields and
+`404` when the content ID has no decision to appeal. It should append an
+appeal entry rather than overwrite the original decision. This is a design
+contract, not current runtime behavior: `POST /appeal` still returns `501`.
 
 ### The combining rule
 
@@ -74,7 +188,15 @@
 
 **The rule:**
 
+Take the weighted average of the model and style scores. Higher values from
+either signal raise the combined AI-likelihood score; when they disagree,
+averaging moderates the result instead of allowing one signal to override the
+other.
+
 **The numbers:**
+
+`WEIGHT_MODEL_SIGNAL = 0.5`; `WEIGHT_STYLE_SIGNAL = 0.5`. The current
+thresholds are `HUMAN_THRESHOLD = 0.35` and `AI_THRESHOLD = 0.65`.
 
 **Where it lives:** `scoring.py::combine_signals`
 
@@ -83,7 +205,11 @@
 
 **A case where my two signals split, and what my rule does with it:**
 
-
+For example, a predictable human-written passage could score `0.82` on the
+model signal while the style stub returns `0.50`. The equal-weight average is
+`0.66`, which lands just inside the AI band. Averaging moderates the model
+score but does not prevent this false positive; the stub currently provides
+no independent evidence to counter it.
 
 ---
 
@@ -96,15 +222,16 @@
 
 | Label | Score range | The exact text a reader sees |
 |---|---|---|
-| high-confidence human |  |  |
-| unsure |  |  |
-| high-confidence AI |  |  |
+| high-confidence human | 0.00–0.35 inclusive | The signals suggest this text may be human-written; this is not proof of authorship. |
+| unsure | greater than 0.35 and less than 0.65 | The signals are inconclusive; this is not a determination of authorship. |
+| high-confidence AI | 0.65–1.00 inclusive | The signals suggest this text may be AI-generated; this is not proof of authorship. |
 
 **Why I worded the "unsure" one this way:**
 <!-- It's the hardest of the three. It has to admit uncertainty without
      sounding like an accusation, because the person reading it may well have
      written every word themselves. -->
-
+It says plainly that the signals did not reach a conclusion and avoids treating
+uncertainty as an accusation.
 
 
 ---
