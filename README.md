@@ -48,9 +48,8 @@
    over the text and adds a 0–1 predictability-based score; higher means more
    AI-like. If the model is unavailable, the route returns `503`.
 4. **`stylometry.style_signal` in `stylometry.py`** is intended to add a
-   second 0–1 score based on text shape rather than meaning. It currently
-   returns the fixed placeholder `0.5`, so it does not yet distinguish
-   submissions.
+   second 0–1 score based on sentence-length variation and vocabulary
+   repetition, without interpreting meaning.
 5. **`scoring.combine_signals` in `scoring.py`** averages the two scores using
    the configured weights, currently 0.5 for each. Disagreement pulls the
    result toward the middle rather than letting either score decide alone.
@@ -105,37 +104,76 @@ scores did not separate AI-written from human-written text; in particular,
 the known human-written excerpt scored very AI-like. This is evidence of the
 signal's limitation, not evidence that the excerpt was AI-generated.
 
+**Same three probes, both signals:**
+
+| Probe | Model score | Style score | What happened |
+|---|---:|---:|---|
+| AI-style conventional sample | 0.3751 | 0.4675 | Close agreement; both remain in the unsure band |
+| Personal-style sample (authorship not independently verified) | 0.5331 | 0.4215 | Signals split by 0.1116; the average is 0.4773 |
+| Borderline-style sample (not ground truth) | 0.4216 | 0.4399 | Close agreement; both remain in the unsure band |
+
+The personal-style sample is the clearest split in this set: the model leans
+more AI-like than the style score. The model and style score both remain
+uncertain, so the equal-weight average returns to the middle rather than
+letting one decide alone.
+
 ### Signal two — the style signal
 
 **What it measures:**
 
 `stylometry.py` is designed to measure the text's shape without reading its
-meaning: variation in sentence lengths, vocabulary repetition
-(type-token ratio), and punctuation density. Its intended output is a 0–1
-score where higher means more AI-like. The current `style_signal` is still a
-stub that always returns `0.5`; those measurements are not implemented yet.
+meaning. It computes the coefficient of variation for sentence word counts
+(sample standard deviation divided by the mean) and the type-token ratio
+(unique words divided by total words). It turns the variation into an
+AI-like score with `1 / (1 + variation)` and inverts the type-token ratio
+(`1 - ratio`) so repeated vocabulary raises the score. The style score is the
+mean of those two values; higher means more AI-like. If there are fewer than
+two sentences, variation contributes a neutral `0.5`.
+
+Punctuation density (punctuation characters per word) is computed and printed
+as a diagnostic, but is not included in the score: punctuation frequency
+alone has no dependable direction without calibration evidence.
 
 **Why that might differ between human and AI writing:**
 
 Generated prose can use a more even sentence rhythm and narrower vocabulary
 than an individual writer's naturally uneven style. Sentence-length variation,
 repeated words, and punctuation patterns may therefore differ on average.
-They are tendencies, not reliable rules about an individual author.
+The score uses the first two tendencies; punctuation remains visible for
+inspection only. These are tendencies, not reliable rules about an individual
+author.
 
 **What it can't see:**
 
-It cannot see meaning, authorship, or whether a text is true. A person can
-change the measured shape without changing the ideas—for example, by breaking
-sentences up, adding typos, or including a quotation. Those changes can move
-the score without changing who wrote the work.
+It cannot see meaning, authorship, or whether a text is true. Type-token ratio
+also falls with text length, and repeated words may be a natural feature of a
+human writer. A person can change the measured shape without changing the
+ideas—for example, by breaking sentences up, adding typos, or including a
+quotation. Those changes can move the score without changing who wrote the
+work.
+
+**Four-input calibration (same local model and style formula):**
+
+| Input | Model score | Style score | Combined score | Observation |
+|---|---:|---:|---:|---|
+| Original AI-generated conventional paragraph | 0.6651 | 0.4724 | 0.56875 | Signals disagree; average stays unsure |
+| Human-written Dickens excerpt | 0.9583 | 0.5694 | 0.76385 | Both signals lean AI-like, despite known human authorship |
+| Formal human-written Constitution excerpt | 0.9853 | 0.3846 | 0.68495 | Strong disagreement; average still crosses the AI threshold |
+| Lightly edited AI-generated paragraph | 0.5432 | 0.3945 | 0.46885 | Both signals stay in the unsure range |
+
+For the Constitution excerpt, the signals disagree strongly: the model score
+is very AI-like while style is much lower, but the equal-weight average still
+crosses the AI threshold. The Dickens excerpt is a second failure case: both
+scores lean AI-like for known human writing. These examples show that neither
+score is proof of authorship.
 
 ### A false-positive trace
 
 The U.S. Constitution preamble excerpt is human-written, but the model
-returned `model_score = 0.9853` for it. The current style stub returned
-`style_score = 0.50`. With equal weights, the combined score was
-`(0.5 × 0.9853) + (0.5 × 0.50) = 0.74265`. Since `AI_THRESHOLD` is `0.65`,
-the reader saw the `ai` guess and this label:
+returned `model_score = 0.9853` for it. The style signal returned
+`style_score = 0.3846`, a substantial disagreement. With equal weights, the
+combined score was `(0.5 × 0.9853) + (0.5 × 0.3846) = 0.68495`. Since
+`AI_THRESHOLD` is `0.65`, the reader saw the `ai` guess and this label:
 
 > The signals suggest this text may be AI-generated; this is not proof of authorship.
 
@@ -199,15 +237,20 @@ contract, not current runtime behavior: `POST /appeal` still returns `501`.
 
 **The rule:**
 
-Take the weighted average of the model and style scores. Higher values from
-either signal raise the combined AI-likelihood score; when they disagree,
-averaging moderates the result instead of allowing one signal to override the
-other.
+Take the weighted average:
+`combined = (0.5 × model_score) + (0.5 × style_score)`. Both signals are
+intended to point in the same direction, so a high score from either raises
+the combined AI-likelihood score. When they disagree, averaging pulls the
+result toward the middle rather than letting either signal override the
+other. I chose equal weights because neither signal has demonstrated stronger
+reliability; this is deliberately simple, not a calibrated probability.
 
 **The numbers:**
 
 `WEIGHT_MODEL_SIGNAL = 0.5`; `WEIGHT_STYLE_SIGNAL = 0.5`. The current
-thresholds are `HUMAN_THRESHOLD = 0.35` and `AI_THRESHOLD = 0.65`.
+thresholds are `HUMAN_THRESHOLD = 0.35` and `AI_THRESHOLD = 0.65`. This
+equal-weight rule was documented before the style-score implementation was
+calibrated.
 
 **Where it lives:** `scoring.py::combine_signals`
 
@@ -216,11 +259,10 @@ thresholds are `HUMAN_THRESHOLD = 0.35` and `AI_THRESHOLD = 0.65`.
 
 **A case where my two signals split, and what my rule does with it:**
 
-For example, a predictable human-written passage could score `0.82` on the
-model signal while the style stub returns `0.50`. The equal-weight average is
-`0.66`, which lands just inside the AI band. Averaging moderates the model
-score but does not prevent this false positive; the stub currently provides
-no independent evidence to counter it.
+The formal Constitution excerpt scored `0.9853` on the model signal and
+`0.3846` on the style signal. Their equal-weight average, `0.68495`, is lower
+than the model score but still crosses the `0.65` AI threshold. Averaging
+moderates disagreement; it does not guarantee a correct result.
 
 ---
 
@@ -262,18 +304,18 @@ uncertainty as an accusation.
 ```bash
 $ curl -X POST http://127.0.0.1:5000/submit \
   -H "Content-Type: application/json" \
-  -d '{"text":"We the People of the United States, in Order to form a more perfect Union, establish Justice, insure domestic Tranquility, provide for the common defence, promote the general Welfare, and secure the Blessings of Liberty to ourselves and our Posterity, do ordain and establish this Constitution for the United States of America.","creator_id":"readme-human-sample"}'
+  -d '{"text":"We the People of the United States, in Order to form a more perfect Union, establish Justice, insure domestic Tranquility, provide for the common defence, promote the general Welfare, and secure the Blessings of Liberty to ourselves and our Posterity, do ordain and establish this Constitution for the United States of America.","creator_id":"readme-human-sample-style-v2"}'
 ```
 
 ```json
 {
-  "combined_score": 0.74265,
-  "confidence": 0.74265,
-  "content_id": "2bcd0cd6-dd85-4117-8524-11752345a621",
+  "combined_score": 0.68495,
+  "confidence": 0.68495,
+  "content_id": "93ca2454-183a-40f3-bf03-3dd62f852898",
   "guess": "ai",
   "label": "The signals suggest this text may be AI-generated; this is not proof of authorship.",
   "model_score": 0.9853,
-  "style_score": 0.5
+  "style_score": 0.3846
 }
 ```
 
@@ -282,7 +324,7 @@ $ curl -X POST http://127.0.0.1:5000/submit \
 ```bash
 $ curl -X POST http://127.0.0.1:5000/appeal \
   -H "Content-Type: application/json" \
-  -d '{"content_id":"2bcd0cd6-dd85-4117-8524-11752345a621","reasoning":"I wrote this text myself and would like the decision reviewed."}'
+  -d '{"content_id":"93ca2454-183a-40f3-bf03-3dd62f852898","reasoning":"I wrote this text myself and would like the decision reviewed."}'
 ```
 
 ```json
@@ -290,7 +332,7 @@ $ curl -X POST http://127.0.0.1:5000/appeal \
   "error": "not_implemented",
   "message": "POST /appeal isn't built yet — see the TODO in app.py.",
   "you_sent": {
-    "content_id": "2bcd0cd6-dd85-4117-8524-11752345a621",
+    "content_id": "93ca2454-183a-40f3-bf03-3dd62f852898",
     "reasoning": "I wrote this text myself and would like the decision reviewed."
   }
 }
@@ -307,15 +349,15 @@ $ curl "http://127.0.0.1:5000/log?limit=1"
   "count": 1,
   "entries": [
     {
-      "combined_score": 0.74265,
-      "content_id": "2bcd0cd6-dd85-4117-8524-11752345a621",
-      "creator_id": "readme-human-sample",
+      "combined_score": 0.68495,
+      "content_id": "93ca2454-183a-40f3-bf03-3dd62f852898",
+      "creator_id": "readme-human-sample-style-v2",
       "guess": "ai",
       "label": "The signals suggest this text may be AI-generated; this is not proof of authorship.",
       "model_score": 0.9853,
       "status": "decided",
-      "style_score": 0.5,
-      "timestamp": "2026-10-26T02:38:33+00:00"
+      "style_score": 0.3846,
+      "timestamp": "2026-10-26T02:42:47+00:00"
     }
   ]
 }
