@@ -46,11 +46,14 @@ Two things worth knowing before you pick numbers:
 
 <!-- Your criterion. It must name a number. -->
 
-
+In each of three evaluation trials, no more than 1 of 10 pieces I wrote myself
+will receive the `ai` guess.
 
 **Why this target:**
 
-
+A false accusation can harm a writer more than a missed AI-written passage
+harms the site. Allowing one error recognizes that the signals are imperfect,
+while keeping the acceptable false-positive rate low.
 
 ---
 
@@ -58,11 +61,15 @@ Two things worth knowing before you pick numbers:
 
 <!-- Your criterion. -->
 
-
+In each trial, the median `combined_score` for five clearly AI-generated
+samples will be at least 0.20 higher than the median score for five
+clearly human-written samples.
 
 **Why this target:**
 
-
+A measurable gap shows that the scores distinguish these two groups at least
+somewhat, without pretending that any one score proves authorship. Using the
+median makes the target less dependent on one unusually high or low sample.
 
 ---
 
@@ -70,11 +77,14 @@ Two things worth knowing before you pick numbers:
 
 <!-- Your criterion. -->
 
-
+In each trial, the evaluation set will produce at least one `human`, one
+`unsure`, and one `ai` guess.
 
 **Why this target:**
 
-
+All three outcomes need to be reachable for the labels to be useful. If a
+label never appears, the thresholds or the signals are not giving readers the
+range of outcomes the service promises.
 
 ---
 
@@ -82,11 +92,15 @@ Two things worth knowing before you pick numbers:
 
 <!-- Your criterion. -->
 
-
+For three valid appeals against existing content IDs, all three requests will
+return `200`, append an appeal entry with status `under_review`, and leave the
+original decision entry unchanged.
 
 **Why this target:**
 
-
+A writer needs a reliable way to challenge a mistaken result. Keeping the
+original decision and recording every appeal makes the review history
+auditable rather than silently replacing the first result.
 
 ---
 
@@ -94,11 +108,15 @@ Two things worth knowing before you pick numbers:
 
 <!-- Your criterion. -->
 
-
+Missing, null, empty, whitespace-only, and over-100,000-character `text`
+inputs will each return `400` or `413`—never `500`—and each rejected request
+will leave a rejection entry in the audit log.
 
 **Why this target:**
 
-
+Malformed or excessively large input should not crash the service or disappear
+without a trace. A clear client error tells the caller what happened, and the
+log makes repeated failures diagnosable.
 
 ---
 
