@@ -92,6 +92,19 @@ predictable and score as AI-like. Conversely, unusual or ornate human writing
 can score as human-like. It also does not understand whether a claim is true
 or whether the writer used AI.
 
+**Standalone `python detector.py` checks:** The local `gpt2` model returned:
+
+| Probe | Perplexity | `model_signal` |
+|---|---:|---:|
+| Assistant-generated conventional prose (AI-written) | 61.9 | 0.3751 |
+| U.S. Constitution preamble excerpt (human-written) | 3.2 | 0.9853 |
+| Plain, ordinary prose intended as a borderline-style example | 54.8 | 0.4216 |
+
+The plain-prose probe is not an authorship-ground-truth sample. These three
+scores did not separate AI-written from human-written text; in particular,
+the known human-written excerpt scored very AI-like. This is evidence of the
+signal's limitation, not evidence that the excerpt was AI-generated.
+
 ### Signal two — the style signal
 
 **What it measures:**
@@ -118,21 +131,19 @@ the score without changing who wrote the work.
 
 ### A false-positive trace
 
-Imagine a real writer who uses plain, common words and short, regular
-sentences. The model finds that writing predictable and returns
-`model_score = 0.82`. The current style stub returns `style_score = 0.50`.
-With the current equal weights, the combined score is
-`(0.5 × 0.82) + (0.5 × 0.50) = 0.66`. Since `AI_THRESHOLD` is `0.65`, the
-reader sees the `ai` guess and this label:
+The U.S. Constitution preamble excerpt is human-written, but the model
+returned `model_score = 0.9853` for it. The current style stub returned
+`style_score = 0.50`. With equal weights, the combined score was
+`(0.5 × 0.9853) + (0.5 × 0.50) = 0.74265`. Since `AI_THRESHOLD` is `0.65`,
+the reader saw the `ai` guess and this label:
 
 > The signals suggest this text may be AI-generated; this is not proof of authorship.
 
-This is a false positive: the writer wrote the text themselves, but
-predictability pushed the score into the AI band. The intended remedy is to
-appeal with the content ID and their reasoning. **The appeal contract is
-described below, but `POST /appeal` is not implemented yet and currently
-returns `501`; the writer cannot complete that path in the running service
-today.**
+This is a false positive: people wrote the passage, but its predictability
+pushed the score into the AI band. The intended remedy is to appeal with the
+content ID and reasoning. **The appeal contract is described below, but
+`POST /appeal` is not implemented yet and currently returns `501`; the writer
+cannot complete that path in the running service today.**
 
 ### Endpoint contracts
 
@@ -251,11 +262,19 @@ uncertainty as an accusation.
 ```bash
 $ curl -X POST http://127.0.0.1:5000/submit \
   -H "Content-Type: application/json" \
-  -d '{"text": "...", "creator_id": "..."}'
+  -d '{"text":"We the People of the United States, in Order to form a more perfect Union, establish Justice, insure domestic Tranquility, provide for the common defence, promote the general Welfare, and secure the Blessings of Liberty to ourselves and our Posterity, do ordain and establish this Constitution for the United States of America.","creator_id":"readme-human-sample"}'
 ```
 
 ```json
-
+{
+  "combined_score": 0.74265,
+  "confidence": 0.74265,
+  "content_id": "2bcd0cd6-dd85-4117-8524-11752345a621",
+  "guess": "ai",
+  "label": "The signals suggest this text may be AI-generated; this is not proof of authorship.",
+  "model_score": 0.9853,
+  "style_score": 0.5
+}
 ```
 
 **An appeal**
@@ -263,21 +282,43 @@ $ curl -X POST http://127.0.0.1:5000/submit \
 ```bash
 $ curl -X POST http://127.0.0.1:5000/appeal \
   -H "Content-Type: application/json" \
-  -d '{"content_id": "...", "reasoning": "..."}'
+  -d '{"content_id":"2bcd0cd6-dd85-4117-8524-11752345a621","reasoning":"I wrote this text myself and would like the decision reviewed."}'
 ```
 
 ```json
-
+{
+  "error": "not_implemented",
+  "message": "POST /appeal isn't built yet — see the TODO in app.py.",
+  "you_sent": {
+    "content_id": "2bcd0cd6-dd85-4117-8524-11752345a621",
+    "reasoning": "I wrote this text myself and would like the decision reviewed."
+  }
+}
 ```
 
 **What the log shows afterwards**
 
 ```bash
-$ curl "http://127.0.0.1:5000/log?limit=3"
+$ curl "http://127.0.0.1:5000/log?limit=1"
 ```
 
 ```json
-
+{
+  "count": 1,
+  "entries": [
+    {
+      "combined_score": 0.74265,
+      "content_id": "2bcd0cd6-dd85-4117-8524-11752345a621",
+      "creator_id": "readme-human-sample",
+      "guess": "ai",
+      "label": "The signals suggest this text may be AI-generated; this is not proof of authorship.",
+      "model_score": 0.9853,
+      "status": "decided",
+      "style_score": 0.5,
+      "timestamp": "2026-10-26T02:38:33+00:00"
+    }
+  ]
+}
 ```
 
 ---
