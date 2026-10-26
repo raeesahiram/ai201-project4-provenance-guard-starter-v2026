@@ -180,8 +180,8 @@ combined score was `(0.5 × 0.9853) + (0.5 × 0.3846) = 0.68495`. Since
 This is a false positive: people wrote the passage, but its predictability
 pushed the score into the AI band. The intended remedy is to appeal with the
 content ID and reasoning. **The appeal contract is described below, but
-`POST /appeal` is not implemented yet and currently returns `501`; the writer
-cannot complete that path in the running service today.**
+`POST /appeal` records the writer's reasoning and marks the appended appeal
+entry `under_review`; the original decision remains in the audit log.
 
 ### Endpoint contracts
 
@@ -217,7 +217,7 @@ Invalid or missing fields return `400` with `error` and `message`. Text too shor
 | `content_id` | string | yes | The ID returned by `/submit` for the decision being challenged |
 | `reasoning` | string | yes | The writer's explanation of why they are appealing |
 
-**Intended successful response fields (`200`)**
+**Successful response fields (`200`)**
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -225,10 +225,10 @@ Invalid or missing fields return `400` with `error` and `message`. Text too shor
 | `status` | string | `under_review`, confirming the appeal was recorded |
 | `message` | string | Confirmation that the appeal was received |
 
-The intended handler should return `400` for missing or invalid fields and
-`404` when the content ID has no decision to appeal. It should append an
-appeal entry rather than overwrite the original decision. This is a design
-contract, not current runtime behavior: `POST /appeal` still returns `501`.
+Missing or invalid fields return `400`; an unknown content ID returns `404`.
+The endpoint appends an appeal entry with status `under_review`, preserving
+the original decision entry (which remains `decided`) so the audit trail
+shows both records in order.
 
 ### The combining rule
 
@@ -286,6 +286,19 @@ moderates disagreement; it does not guarantee a correct result.
 It says plainly that the signals did not reach a conclusion and avoids treating
 uncertainty as an accusation.
 
+**Live route checks:** Each label was returned by `POST /submit` for the
+following input. A label reflects the score band, not verified authorship.
+
+| Result | Text submitted (excerpt) | Combined score | Content ID |
+|---|---|---:|---|
+| `human` | “Petrichor, susurrus, defenestration, ultracrepidarian, callipygian…” | 0.21775 | `e3a5877e-4213-49fe-9906-052736e8c2bf` |
+| `unsure` | “A successful project begins with a clear plan. The plan identifies the main goal…” | 0.56875 | `23e97593-b541-4a67-9f0a-228d638cfb83` |
+| `ai` | The human-written U.S. Constitution preamble excerpt shown below | 0.68495 | `87ca4a72-fe58-418d-a707-75880dc62004` |
+
+The `ai` result is a known false positive. The human-band probe is unusual
+text and is not a claim about its authorship. These results show all three
+score bands are reachable, not that the detector reliably identifies authors.
+
 
 ---
 
@@ -324,44 +337,52 @@ $ curl -X POST http://127.0.0.1:5000/submit \
 ```bash
 $ curl -X POST http://127.0.0.1:5000/appeal \
   -H "Content-Type: application/json" \
-  -d '{"content_id":"93ca2454-183a-40f3-bf03-3dd62f852898","reasoning":"I wrote this text myself and would like the decision reviewed."}'
+  -d '{"content_id":"93ca2454-183a-40f3-bf03-3dd62f852898","reasoning":"I wrote this text myself and request a review of the AI label."}'
 ```
 
 ```json
 {
-  "error": "not_implemented",
-  "message": "POST /appeal isn't built yet — see the TODO in app.py.",
-  "you_sent": {
-    "content_id": "93ca2454-183a-40f3-bf03-3dd62f852898",
-    "reasoning": "I wrote this text myself and would like the decision reviewed."
-  }
+  "content_id": "93ca2454-183a-40f3-bf03-3dd62f852898",
+  "message": "Your appeal has been received and is under review.",
+  "status": "under_review"
 }
 ```
 
 **What the log shows afterwards**
 
 ```bash
-$ curl "http://127.0.0.1:5000/log?limit=1"
+$ curl -sS "http://127.0.0.1:5000/log" | python -c \
+  'import json,sys; print(json.dumps([e for e in json.load(sys.stdin)["entries"] if e.get("content_id") == "93ca2454-183a-40f3-bf03-3dd62f852898"], indent=2))'
 ```
 
 ```json
-{
-  "count": 1,
-  "entries": [
-    {
-      "combined_score": 0.68495,
-      "content_id": "93ca2454-183a-40f3-bf03-3dd62f852898",
-      "creator_id": "readme-human-sample-style-v2",
-      "guess": "ai",
-      "label": "The signals suggest this text may be AI-generated; this is not proof of authorship.",
-      "model_score": 0.9853,
-      "status": "decided",
-      "style_score": 0.3846,
-      "timestamp": "2026-10-26T02:42:47+00:00"
-    }
-  ]
-}
+[
+  {
+    "combined_score": 0.68495,
+    "content_id": "93ca2454-183a-40f3-bf03-3dd62f852898",
+    "creator_id": "readme-human-sample-style-v2",
+    "guess": "ai",
+    "label": "The signals suggest this text may be AI-generated; this is not proof of authorship.",
+    "model_score": 0.9853,
+    "status": "decided",
+    "style_score": 0.3846,
+    "timestamp": "2026-10-26T02:42:47+00:00"
+  },
+  {
+    "content_id": "93ca2454-183a-40f3-bf03-3dd62f852898",
+    "creator_id": "readme-human-sample-style-v2",
+    "event": "appeal",
+    "reasoning": "I wrote this text myself and request a review of the AI label.",
+    "status": "under_review",
+    "timestamp": "2026-10-26T02:47:30+00:00"
+  }
+]
 ```
+
+Two `model_score: 0.0` entries from overlapping model-initialization checks
+remain in the append-only log as failed-test artifacts. Detector loading is
+now synchronized; subsequent serial and simultaneous submissions returned
+nonzero scores and the expected label bands.
 
 ---
 

@@ -42,11 +42,13 @@ for yourself where it lands.
 """
 
 import math
+import threading
 
 import config
 
 _model = None
 _tokenizer = None
+_load_lock = threading.Lock()
 
 
 class DetectorUnavailable(RuntimeError):
@@ -56,30 +58,31 @@ class DetectorUnavailable(RuntimeError):
 def _load():
     """Load the model once and keep it. First call downloads ~550 MB."""
     global _model, _tokenizer
-    if _model is not None:
+    with _load_lock:
+        if _model is not None:
+            return _model, _tokenizer
+
+        try:
+            import torch  # noqa: F401
+            from transformers import AutoModelForCausalLM, AutoTokenizer
+        except ImportError as exc:
+            raise DetectorUnavailable(
+                f"transformers or torch isn't installed ({exc}).\n"
+                f"Run: pip install -r requirements.txt"
+            ) from exc
+
+        try:
+            _tokenizer = AutoTokenizer.from_pretrained(config.DETECTOR_MODEL)
+            _model = AutoModelForCausalLM.from_pretrained(config.DETECTOR_MODEL)
+            _model.eval()
+        except Exception as exc:  # noqa: BLE001
+            raise DetectorUnavailable(
+                f"Couldn't load '{config.DETECTOR_MODEL}': {exc}\n"
+                f"The first run downloads about 550 MB — check your connection and "
+                f"that you have disk space free."
+            ) from exc
+
         return _model, _tokenizer
-
-    try:
-        import torch  # noqa: F401
-        from transformers import AutoModelForCausalLM, AutoTokenizer
-    except ImportError as exc:
-        raise DetectorUnavailable(
-            f"transformers or torch isn't installed ({exc}).\n"
-            f"Run: pip install -r requirements.txt"
-        ) from exc
-
-    try:
-        _tokenizer = AutoTokenizer.from_pretrained(config.DETECTOR_MODEL)
-        _model = AutoModelForCausalLM.from_pretrained(config.DETECTOR_MODEL)
-        _model.eval()
-    except Exception as exc:  # noqa: BLE001
-        raise DetectorUnavailable(
-            f"Couldn't load '{config.DETECTOR_MODEL}': {exc}\n"
-            f"The first run downloads about 550 MB — check your connection and "
-            f"that you have disk space free."
-        ) from exc
-
-    return _model, _tokenizer
 
 
 def perplexity(text: str) -> float:

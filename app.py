@@ -19,7 +19,7 @@ Routes:
 
     POST /ping        the worked example. Already works. Don't edit it
     POST /submit      score, label, and log a submission
-    POST /appeal      ← YOU BUILD THIS (Milestone 5)
+    POST /appeal      record an appeal against a submission
     GET  /log         the audit log. Already works
     GET  /health      is the service up, and is the model loaded
 """
@@ -237,32 +237,50 @@ def submit():
 
 @app.post("/appeal")
 def appeal():
-    """
-    A writer says you got it wrong. ← TODO — Milestone 5
+    """Record a writer's appeal without overwriting the original decision."""
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        payload = {}
 
-    Expects JSON:
-        {"content_id": "...", "reasoning": "..."}
+    content_id = payload.get("content_id")
+    reasoning = payload.get("reasoning")
+    if not isinstance(content_id, str) or not content_id.strip():
+        return jsonify({
+            "error": "invalid_request",
+            "message": "'content_id' must be a non-empty string.",
+        }), 400
+    if not isinstance(reasoning, str) or not reasoning.strip():
+        return jsonify({
+            "error": "invalid_request",
+            "message": "'reasoning' must be a non-empty string.",
+        }), 400
 
-    Should:
-      1. Check the content_id actually exists — `audit.entries_for(id)` tells
-         you. A typo here fails silently and looks like a broken endpoint,
-         which is the single most common way this milestone eats an hour.
-      2. Record the appeal with `audit.log_appeal(...)`, which moves the item
-         to `under_review`.
-      3. Confirm to the writer. No automatic re-checking needed.
+    content_id = content_id.strip()
+    original_decision = next(
+        (
+            entry
+            for entry in audit.entries_for(content_id)
+            if entry.get("status") == "decided"
+            and entry.get("event") != "rejected"
+        ),
+        None,
+    )
+    if original_decision is None:
+        return jsonify({
+            "error": "not_found",
+            "message": "No decision exists for that content_id.",
+        }), 404
 
-    This is the smallest endpoint in the project and the one that matters most
-    to the person on the other end. It's the only thing standing between a
-    wrong accusation and nothing at all.
-    """
-    payload = request.get_json(silent=True) or {}
-
-    # TODO: delete this and build the route.
+    audit.log_appeal(
+        content_id=content_id,
+        creator_id=original_decision["creator_id"],
+        reasoning=reasoning.strip(),
+    )
     return jsonify({
-        "error": "not_implemented",
-        "message": "POST /appeal isn't built yet — see the TODO in app.py.",
-        "you_sent": payload,
-    }), 501
+        "content_id": content_id,
+        "status": "under_review",
+        "message": "Your appeal has been received and is under review.",
+    })
 
 
 # ── Already works ─────────────────────────────────────────────────────────────

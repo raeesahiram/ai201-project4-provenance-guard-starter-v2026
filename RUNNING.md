@@ -90,7 +90,7 @@ If the local detector model has not been downloaded yet, the route returns
 | `GET /health` | **works** | Is the service up, is the model loaded |
 | `GET /log` | **works** | The audit log, as JSON |
 | `POST /submit` | **works** | Scores, labels, and logs submissions |
-| `POST /appeal` | **you build it** | Milestone 5 |
+| `POST /appeal` | **works** | Records an appeal as `under_review` in the audit log |
 
 ---
 
@@ -146,6 +146,11 @@ Malformed JSON or missing/invalid fields return `400`. If the detector model
 cannot be loaded, the route returns `503` with setup information. The response
 includes `content_id`, `guess`, `confidence` (the combined score), `label`,
 `model_score`, and `style_score`.
+
+`POST /appeal` takes `content_id` and non-empty `reasoning` strings. It
+returns `200` with status `under_review` when the decision exists, `400` for
+invalid fields, and `404` for an unknown content ID. Appeals are appended to
+the log; the original decision remains unchanged.
 
 ---
 
@@ -275,7 +280,7 @@ sentences, a pasted quotation. That is very cheap to do on purpose.
 
 | What you see | What it means |
 |---|---|
-| `501 not_implemented` | Correct at the start — that's the TODO in `app.py` |
+| `501 not_implemented` | You're running an older starter version; `/submit` and `/appeal` are implemented here |
 | `404` from curl | Is the server running? Is the path exactly what you typed? |
 | `Cannot bind parameter 'Headers'` | You're in PowerShell, where `curl` is a different tool. Use `curl.exe`, on one line |
 | Request body arrives empty | curl needs `-H "Content-Type: application/json"` |
