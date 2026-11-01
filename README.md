@@ -422,24 +422,24 @@ nonzero scores and the expected label bands.
 
 ## Rate Limiting
 
-**My limits:** ___ per minute, ___ per day
+**My limits:** 5 per minute, 100 per day
 
 **Why those numbers and not others:**
-<!-- Think about two people: a real writer submitting their own work a few
-     times an hour, and a script sending a thousand variations to map your
-     thresholds. Your numbers have to be liveable for the first and hostile to
-     the second. -->
+A real writer can submit several revisions in a short session and still stay
+within five per minute; the daily cap allows regular work with room for
+revisions. A script sending variations to map thresholds is throttled after
+five quick submissions and cannot continue indefinitely across the day.
 
-**What a caller counts as:** <!-- per address, or per creator_id? They fail
-differently — one script can look like a thousand callers, and one household
-can look like one. -->
+**What a caller counts as:** A `creator_id`. This ties the limit to the
+submitting account rather than a shared network address, so writers on the
+same network don't consume one another's allowance.
 
 **The run of status codes when I pushed past it:**
 
 <!-- python run_attacks.py --flood 15 -->
 
 ```
-
+200 200 200 200 200 429 429 429 429 429 429 429 429 429 429
 ```
 
 ---
