@@ -446,23 +446,36 @@ same network don't consume one another's allowance.
 
 ## Attack Run — Before
 
-<!-- Every attack with its outcome and a held-or-broke mark.
-     `run_attacks.py --label before` produces the table. -->
-
-
+Ran all 56 inputs from `attack_set` on 2026-11-01. Results are in
+[`results/attack_run_2026-11-01_1821.md`](./results/attack_run_2026-11-01_1821.md).
+I marked **13 BROKE** and **43 HELD**. An evasion was BROKE when it avoided an
+AI label; a false-positive case was BROKE when known human writing got an AI
+label. The remaining cases were HELD when the service rejected, rate-limited,
+or handled the input without an attack success. The first five shared-creator
+flood submissions were within the configured allowance; the seven excess
+submissions were rate-limited.
 
 **Ten audit log entries from the run**
 
-<!-- Choose entries that show the interesting failures, not the ten easiest. -->
-
 ```json
-
+{"timestamp":"2026-11-01T23:20:58+00:00","content_id":"3e4d53c1-d964-4a96-96d8-7c1e8fb2d492","creator_id":"attacker_EV01","guess":"unsure","model_score":0.1635,"style_score":0.546,"combined_score":0.35475,"label":"The signals are inconclusive; this is not a determination of authorship.","status":"decided"}
+{"timestamp":"2026-11-01T23:20:59+00:00","content_id":"e1d24679-4589-4d73-867b-77af6abd0349","creator_id":"attacker_EV09","guess":"unsure","model_score":0.7042,"style_score":0.5635,"combined_score":0.63385,"label":"The signals are inconclusive; this is not a determination of authorship.","status":"decided"}
+{"timestamp":"2026-11-01T23:20:59+00:00","content_id":"080c5126-f731-49d5-8f50-527902c831de","creator_id":"attacker_EV10","guess":"ai","model_score":0.9792,"style_score":0.5297,"combined_score":0.75445,"label":"The signals suggest this text may be AI-generated; this is not proof of authorship.","status":"decided"}
+{"timestamp":"2026-11-01T23:20:59+00:00","content_id":"6ddfd4b2-1c60-4ba4-8e96-af9006fc463b","creator_id":"attacker_FP04","guess":"ai","model_score":0.8329,"style_score":0.5282,"combined_score":0.68055,"label":"The signals suggest this text may be AI-generated; this is not proof of authorship.","status":"decided"}
+{"timestamp":"2026-11-01T23:20:59+00:00","content_id":"190157df-ba39-4e82-8521-569c2a978786","creator_id":"attacker_FP05","guess":"ai","model_score":0.8005,"style_score":0.6134,"combined_score":0.70695,"label":"The signals suggest this text may be AI-generated; this is not proof of authorship.","status":"decided"}
+{"timestamp":"2026-11-01T23:20:59+00:00","content_id":"c68ef87b-dda9-40ae-a84d-bae452690d63","creator_id":"attacker_FP06","guess":"ai","model_score":0.8814,"style_score":0.4903,"combined_score":0.68585,"label":"The signals suggest this text may be AI-generated; this is not proof of authorship.","status":"decided"}
+{"timestamp":"2026-11-01T23:20:59+00:00","content_id":"981168e6-0df3-4523-9993-21ed1906bc1b","creator_id":"attacker_FP07","guess":"ai","model_score":0.8816,"style_score":0.6276,"combined_score":0.7546,"label":"The signals suggest this text may be AI-generated; this is not proof of authorship.","status":"decided"}
+{"timestamp":"2026-11-01T23:20:59+00:00","content_id":"a84878aa-14d8-44e2-a552-99b4014b37a8","creator_id":"attacker_MF03","guess":"human","model_score":0.0,"style_score":0.5,"combined_score":0.25,"label":"The signals suggest this text may be human-written; this is not proof of authorship.","status":"decided"}
+{"timestamp":"2026-11-01T23:21:00+00:00","content_id":"ebc38858-bd8c-4b63-b8ab-b695b3d21be9","creator_id":"attacker_MF08","guess":"ai","model_score":0.9876,"style_score":0.7264,"combined_score":0.857,"label":"The signals suggest this text may be AI-generated; this is not proof of authorship.","status":"decided"}
+{"timestamp":"2026-11-01T23:21:00+00:00","creator_id":"attacker_flood","event":"rejected","status":"rejected","reason":"rate_limited","limit":"5 per 1 minute"}
 ```
 
 **The single worst outcome** — the one I'd least want to explain to a writer
 whose work got caught by it:
 
-
+FP07: deliberately repetitive genuine human writing received an AI label with
+a combined score of 0.7546. This is the strongest false positive in the run
+and illustrates the risk of treating a score as proof of authorship.
 
 ---
 
