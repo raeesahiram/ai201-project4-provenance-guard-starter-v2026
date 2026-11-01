@@ -404,11 +404,7 @@ def write_report(rows, args):
         passed = all(score["passed"] for score in row["scores"])
         verdict = "MET" if passed else "MISSED"
         if scenario.get("provenance_note"):
-            verdict = (
-                "PROXY ONLY (NUMERIC MET)"
-                if passed
-                else "PROXY ONLY (NUMERIC MISSED)"
-            )
+            verdict = "MISSED (PROXY ONLY)"
         lines.append(
             f"| {criterion_name} | {scenario['target']} | {values} | {verdict} |"
         )

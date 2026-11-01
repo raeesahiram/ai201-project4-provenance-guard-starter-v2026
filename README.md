@@ -491,8 +491,8 @@ The report was produced by `run_eval.py::main`; submissions came from
 
 | Criterion | Target | Run 1 | Run 2 | Run 3 | Verdict |
 |---|---|---|---|---|---|
-| 1. Human-writing false positives (synthetic proxy) | ≤ 1 AI guess of 10 | 0/10 | 0/10 | 0/10 | PROXY ONLY (NUMERIC MET) |
-| 2. Score spread | AI median ≥ 0.20 above human-style median | gap 0.1648 | gap 0.1648 | gap 0.1648 | PROXY ONLY (NUMERIC MISSED) |
+| 1. Human-writing false positives (synthetic proxy) | ≤ 1 AI guess of 10 | 0/10 (proxy) | 0/10 (proxy) | 0/10 (proxy) | MISSED — proxy only; personal writing untested |
+| 2. Score spread | AI median ≥ 0.20 above human-style median | gap 0.1648 (proxy) | gap 0.1648 (proxy) | gap 0.1648 (proxy) | MISSED — proxy only |
 | 3. All three labels reachable | 3 of 3 labels | 3/3 | 3/3 | 3/3 | MET |
 | 4. Appeal changes status and is recorded | 3 of 3 appeals | 3/3 | 3/3 | 3/3 | MET |
 | 5. Invalid and oversized input is rejected and logged | 5 of 5 | 4/5 | 4/5 | 4/5 | MISSED |
@@ -503,7 +503,8 @@ human-authored work. Their results exercise the workflow but do not validate
 those authorship-dependent criteria. Criterion 2's observed median gap was
 below its unchanged 0.20 target. Criterion 5 missed because the 100,001-
 character request returned `200` and was logged as a decision instead of
-being rejected.
+being rejected. The outcome counts were identical across all three trials;
+the returned scores and labels were stable for the same inputs.
 
 **Actual JSON from Trial 1** (the linked report contains the complete output
 for every input in all three trials):
@@ -692,7 +693,7 @@ Criterion 5 — the oversized request was accepted instead of rejected:
 }
 ```
 
-**Diagnoses**
+**Diagnoses — acceptance criteria**
 
 <!-- For each miss AND each broken attack: the stage and the mechanism.
 
@@ -708,20 +709,50 @@ Criterion 5 — the oversized request was accepted instead of rejected:
 
      Look for a pattern. Five failures on one signal is one problem, not five. -->
 
-The score and label outcomes were identical across all three trials for the
-same inputs; content IDs and audit timestamps naturally differed. This run
-showed no score instability.
+Criterion 1 is **MISSED / not validly tested**: the route returned 0 AI
+guesses for the ten synthetic human-style fixtures in each trial, but the
+criterion requires the instructor's own writing. The stage under test is the
+signals and their combination; synthetic prose cannot establish the false-
+positive rate on the required personal samples.
 
-Criterion 2 missed because the AI-generated and synthetic human-style groups
-had medians of 0.5740 and 0.4092, a 0.1648 gap rather than the required 0.20.
-The model signal and style signal together did not separate these fixtures
-enough; this is only a proxy result because the human-style samples are not
-verified human writing. Criterion 5 missed at the route: `app.py::submit`
-validates missing and blank text but does not enforce the criterion's
-100,000-character maximum, so the 100,001-character sample was scored and
-logged as a decision. Criterion 1's numeric count met the target on synthetic
-proxies, but cannot establish a false-positive rate on the instructor's own
-writing.
+Criterion 2 is **MISSED** on the proxy data: the AI-generated and synthetic
+human-style groups had medians of 0.5740 and 0.4092, a 0.1648 gap rather than
+the required 0.20. The model signal and style signal overlap on these
+fixtures, and the 50/50 combining rule does not widen their median separation.
+Because the human-style group is not verified human writing, this is a
+workflow result rather than a valid authorship-grounded comparison.
+
+Criterion 5 is **MISSED** at the **route**: `app.py::submit` validates missing
+and blank text but has no 100,000-character maximum check. It therefore scored
+the 100,001-character input and appended a `decided` entry instead of returning
+400/413 and writing a rejection entry.
+
+Criterion 3 (label mapping) and Criterion 4 (appeal route and append-only
+audit behavior) were MET in every trial. No score or label varied for the same
+inputs across the three trials; generated content IDs and audit timestamps
+naturally differed, so this run showed no score instability.
+
+**Diagnoses — broken attacks**
+
+The attack run marked 13 of 56 cases BROKE. These are grouped by the shared
+stage/mechanism, rather than treated as unrelated individual failures:
+
+| Broken attacks | Stage | Mechanism |
+|---|---|---|
+| EV01, EV02, EV03, EV06, EV07 | Signal two (style signal) | Typographical variety, sentence fragmentation, inserted quotations, extreme sentence-length spread, and punctuation padding changed the measured text shape. Those style features are not authorship evidence, but moved the style score enough that the combined result stayed below the `ai` threshold. |
+| EV04, EV08 | Signal one (model signal) | Unusual word choices and text below the model's useful token window made the model signal less AI-like or less informative; the other signal and averaging then left both results in the `unsure` band. |
+| EV05, EV09 | Both signals and the combining rule | A heavy human-style edit or a human opening paragraph changed observable features in both signals. The equal-weight mean allowed those changed scores to pull the AI-written text below the AI threshold. |
+| FP04, FP05, FP06 | Signal one and combining rule | Human essay, technical documentation, and template-like prose received high model scores (0.8329, 0.8005, and 0.8814). The style scores (0.5282, 0.6134, and 0.4903) did not counterbalance them enough, so the average crossed the AI threshold and produced false accusations. |
+| FP07 | Both signals and combining rule | Deliberate phrase repetition raised the style score to 0.6276, while the model score was 0.8816. Their average, 0.7546, crossed the AI threshold for known human writing. |
+
+Across the broken evasion cases, the recurring pattern is that either signal
+can be shifted by surface form without changing authorship; the combining rule
+does not protect against correlated or intentionally shifted measurements.
+Across the false positives, especially FP04–FP07, the model signal can score
+formal, repetitive, or structured human prose as highly predictable, and
+averaging with the style signal still leaves the result in the AI band. The
+label mapping is applying its configured threshold consistently; it cannot
+correct bad or weakly calibrated upstream scores.
 
 ---
 
