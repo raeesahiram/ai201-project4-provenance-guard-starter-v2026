@@ -166,9 +166,13 @@ def submit():
 
     text = payload.get("text")
     creator_id = payload.get("creator_id")
+    validation_status = 400
 
     if validation_error is None and (not isinstance(text, str) or not text.strip()):
         validation_error = "'text' must be a non-empty string."
+    if validation_error is None and len(text) > 100_000:
+        validation_error = "'text' must not exceed 100,000 characters."
+        validation_status = 413
     if validation_error is None and (
         not isinstance(creator_id, str) or not creator_id.strip()
     ):
@@ -182,13 +186,17 @@ def submit():
         )
         audit.log_rejection(
             creator_id=rejection_creator,
-            reason="invalid_request",
+            reason=(
+                "text_too_large"
+                if validation_status == 413
+                else "invalid_request"
+            ),
             message=validation_error,
         )
         return jsonify({
             "error": "invalid_request",
             "message": validation_error,
-        }), 400
+        }), validation_status
 
     creator_id = creator_id.strip()
     try:

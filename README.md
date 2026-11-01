@@ -479,35 +479,54 @@ and illustrates the risk of treating a score as proof of authorship.
 
 ---
 
+## Attack Run — After
+
+After adding the text-length validation described below, I reran all 56 inputs
+with `python run_attacks.py --set attack_set --label after`. The complete
+responses and reviewed verdicts are in
+[`results/attack_run_2026-11-01_1839_after.md`](./results/attack_run_2026-11-01_1839_after.md).
+
+| Family | Before BROKE / HELD | After BROKE / HELD |
+|---|---:|---:|
+| Evasion | 9 / 1 | 9 / 1 |
+| False positive | 4 / 4 | 4 / 4 |
+| Prompt injection | 0 / 6 | 0 / 6 |
+| Malformed | 0 / 20 | 0 / 20 |
+| Same-creator flood | 0 / 12 | 0 / 12 |
+| **Total** | **13 / 43** | **13 / 43** |
+
+The attack results did not change: the longest attack-set sample is MF08 at
+60,000 characters, so it remains below the new 100,000-character limit. The
+change targets the 100,001-character input in Criterion 5, which is not in this
+attack set.
+
+---
+
 ## Run Log and Verdicts
 
-Ran `python run_eval.py --label before` for three trials without changing the
-scenarios between trials. The complete JSON response and audit-log output for
-every case in every trial is in
-[`results/run_2026-11-01_1832_before.md`](./results/run_2026-11-01_1832_before.md).
-The report was produced by `run_eval.py::main`; submissions came from
-`app.py::submit`, appeals from `app.py::appeal`, and audit checks from
-`app.py::get_log`.
+Ran `python run_eval.py --label before` and, after the one route change,
+`python run_eval.py --label after`. Each run used three trials with no changes
+between trials. The complete actual response and audit JSON for every case is
+in the [before report](./results/run_2026-11-01_1832_before.md) and
+[after report](./results/run_2026-11-01_1839_after.md). Both were produced by
+`run_eval.py::main`; submissions came from `app.py::submit`, appeals from
+`app.py::appeal`, and audit checks from `app.py::get_log`.
 
-| Criterion | Target | Run 1 | Run 2 | Run 3 | Verdict |
-|---|---|---|---|---|---|
-| 1. Human-writing false positives (synthetic proxy) | ≤ 1 AI guess of 10 | 0/10 (proxy) | 0/10 (proxy) | 0/10 (proxy) | MISSED — proxy only; personal writing untested |
-| 2. Score spread | AI median ≥ 0.20 above human-style median | gap 0.1648 (proxy) | gap 0.1648 (proxy) | gap 0.1648 (proxy) | MISSED — proxy only |
-| 3. All three labels reachable | 3 of 3 labels | 3/3 | 3/3 | 3/3 | MET |
-| 4. Appeal changes status and is recorded | 3 of 3 appeals | 3/3 | 3/3 | 3/3 | MET |
-| 5. Invalid and oversized input is rejected and logged | 5 of 5 | 4/5 | 4/5 | 4/5 | MISSED |
+| Criterion | Before: Run 1 / 2 / 3 | Before verdict | After: Run 1 / 2 / 3 | After verdict |
+|---|---|---|---|---|
+| 1. Human-writing false positives (synthetic proxy) | 0/10 / 0/10 / 0/10 | MISSED — proxy only; personal writing untested | 0/10 / 0/10 / 0/10 | MISSED — proxy only; personal writing untested |
+| 2. Score spread | gap 0.1648 / 0.1648 / 0.1648 | MISSED — below 0.20 (proxy only) | gap 0.1648 / 0.1648 / 0.1648 | MISSED — below 0.20 (proxy only) |
+| 3. All three labels reachable | 3/3 / 3/3 / 3/3 | MET | 3/3 / 3/3 / 3/3 | MET |
+| 4. Appeal changes status and is recorded | 3/3 / 3/3 / 3/3 | MET | 3/3 / 3/3 / 3/3 | MET |
+| 5. Invalid and oversized input is rejected and logged | 4/5 / 4/5 / 4/5 | MISSED | 5/5 / 5/5 / 5/5 | MET |
 
-The false-positive and score-spread human-style samples are synthetic
-instructor test fixtures, not the instructor's personal writing or verified
-human-authored work. Their results exercise the workflow but do not validate
-those authorship-dependent criteria. Criterion 2's observed median gap was
-below its unchanged 0.20 target. Criterion 5 missed because the 100,001-
-character request returned `200` and was logged as a decision instead of
-being rejected. The outcome counts were identical across all three trials;
-the returned scores and labels were stable for the same inputs.
+The human-style samples for Criteria 1 and 2 are synthetic instructor
+fixtures, not personal or verified human writing. Their results do not validate
+those authorship-dependent targets. Outcomes for the same inputs were
+identical across all trials; content IDs and timestamps varied as expected.
 
-**Actual JSON from Trial 1** (the linked report contains the complete output
-for every input in all three trials):
+**Actual before-run JSON from Trial 1** (the linked reports contain complete
+outputs for all trials):
 
 Criterion 1 — first of ten synthetic human-style submissions:
 
@@ -693,6 +712,28 @@ Criterion 5 — the oversized request was accepted instead of rejected:
 }
 ```
 
+**Actual after-run JSON for the same oversized input** (now rejected and
+audited):
+
+```json
+{
+  "status": 413,
+  "response": {
+    "error": "invalid_request",
+    "message": "'text' must not exceed 100,000 characters."
+  },
+  "sent": "text length=100001; creator_id=eval_bad_oversized",
+  "rejection_entry": {
+    "creator_id": "eval_bad_oversized",
+    "event": "rejected",
+    "message": "'text' must not exceed 100,000 characters.",
+    "reason": "text_too_large",
+    "status": "rejected",
+    "timestamp": "2026-11-01T23:39:30+00:00"
+  }
+}
+```
+
 **Diagnoses — acceptance criteria**
 
 <!-- For each miss AND each broken attack: the stage and the mechanism.
@@ -709,31 +750,33 @@ Criterion 5 — the oversized request was accepted instead of rejected:
 
      Look for a pattern. Five failures on one signal is one problem, not five. -->
 
-Each criterion's verdict uses its stated target and requires the target to
-hold in all three trials:
+Each criterion's verdict uses its stated target and requires it to hold in
+every trial. After the improvement:
 
-1. **MISSED — not validly tested.** The ten synthetic human-style fixtures
+1. **MISSED — not validly tested.** The synthetic human-style fixtures
    received 0 AI guesses in each trial, but the target requires the
-   instructor's own writing; the **signal one, signal two, and combining-rule**
-   stages cannot establish that false-positive rate from substitute prose.
+   instructor's own writing. This is a dataset limitation: without those
+   personal samples, the **signals and combining rule** cannot establish the
+   required false-positive rate.
 2. **MISSED on proxy data.** The AI-generated and synthetic human-style groups
    had medians of 0.5740 and 0.4092, a 0.1648 gap in every trial, below the
    0.20 target; **signal one and signal two overlap on these samples, and the
    combining rule** does not widen their separation.
 3. **MET.** Each trial returned `human`, `unsure`, and `ai` for the three
-   probes, so the **label-mapping** stage reached all labels in all runs.
+   probes, so the **label-mapping** stage reached all labels in every run.
 4. **MET.** All three appeals in every trial returned 200 with
    `under_review`, appeared after their decision entries, and left each
    original entry unchanged; the **appeal route and audit-log** behavior met
-   the target in all runs.
-5. **MISSED.** Four of five inputs were rejected and logged in every trial,
-   but the 100,001-character input returned 200 and was logged as a decision;
-   the **route** has no 100,000-character maximum check, so it failed to reject
-   and audit this invalid input.
+   the target in every run.
+5. **Before: MISSED; after: MET.** Before the change, four of five inputs were
+   rejected and logged, but the 100,001-character input reached the signals
+   and was logged as a decision. The **route** lacked a length check. The new
+   route rejects text longer than 100,000 characters with 413 and appends a
+   `text_too_large` rejection entry; all five cases then passed in every trial.
 
 The outcome counts were identical across all three trials; the returned scores
 and labels were stable for the same inputs. Generated content IDs and audit
-timestamps naturally differed, so this run showed no score instability.
+timestamps naturally differed, so these runs showed no score instability.
 
 **Diagnoses — broken attacks**
 
@@ -761,20 +804,33 @@ correct bad or weakly calibrated upstream scores.
 
 ## The Improvement
 
-**What I changed:**
+**What I changed:** Added a 100,000-character maximum in `app.py::submit`.
+Text over the limit now receives HTTP 413, is recorded with reason
+`text_too_large`, and never reaches either scoring signal.
 
-**Which diagnosis pointed at it:**
+**Which diagnosis pointed at it:** Criterion 5 missed because a 100,001-
+character submission returned 200 and produced a decision audit entry. The
+failure was in the route's input validation, not either signal.
 
 ### Attack Run — After
 
-<!-- Same format. `run_attacks.py --label after` -->
+The complete 56-input result and adjudicated verdicts are in
+[`results/attack_run_2026-11-01_1839_after.md`](./results/attack_run_2026-11-01_1839_after.md).
+The same attacks were run with `python run_attacks.py --set attack_set
+--label after`; the family-by-family comparison above shows BROKE/HELD before
+and after.
 
+**Did it help, and how do I know:** Yes, for the diagnosed input-size defect.
+Criterion 5 improved from 4/5 in every trial to 5/5 in every trial, and the
+oversized request now returns 413 with a rejection audit entry. It did not
+change attack outcomes (13 BROKE, 43 HELD before and after) because the largest
+attack fixture is only 60,000 characters. It also did not improve the 0.1648
+score gap for Criterion 2 or validate Criterion 1's personal-writing target.
 
-
-**Did it help, and how do I know:**
-
-<!-- Widening the unsure band usually fixes one problem and creates another.
-     Reporting that trade honestly is worth full credit. -->
+**Trade-off:** Requests longer than 100,000 characters—including legitimate
+long submissions—are now rejected before scoring. This bounds input work and
+meets the stated validation target, but writers who need to submit longer
+pieces must split them; the service currently has no chunking workflow.
 
 
 
@@ -782,15 +838,21 @@ correct bad or weakly calibrated upstream scores.
 
 ## What's Still Broken
 
-<!-- For each attack still getting through and each criterion still missed:
-     what you'd do, and why you stopped. -->
+Criterion 1 remains unverified against real human writing: its synthetic proxy
+had zero AI guesses, but instructor-authored samples are needed before drawing
+an authorship conclusion. Criterion 2's synthetic proxy gap remains below
+target and likewise needs verified human writing. The 13 broken attacks remain
+the same: surface-form changes can move either signal and the equal-weight
+average below the AI threshold for AI-written text, while formal and repetitive
+human samples can still cross that threshold. The size fix does not address
+these signal and combining-rule failures. I stopped after the one route
+improvement so the before/after comparison isolates its effect.
 
-
-
-**The trade I'd make if this ran for real:**
-
-<!-- Two sentences. Fewer wrong accusations means more AI text getting through.
-     Say which way you'd go and WHO PAYS FOR IT. -->
+**The trade I'd make if this ran for real:** I would prioritize avoiding false
+accusations by keeping an `unsure` band wide enough that borderline or
+formal-looking human writing is not labeled AI. The cost is that some
+AI-written text would also remain `unsure` or be missed, so the site would
+accept more missed detections to reduce harm to writers.
 
 
 

@@ -138,13 +138,15 @@ If the local detector model has not been downloaded yet, the route returns
 ## How `/submit` processes a request
 
 The route validates the JSON object, checks that `text` and `creator_id` are
-non-empty strings, then runs the model signal and style signal. The two scores
-are combined, mapped to a guess and reader-facing label, and written to the
-audit log with a generated content ID.
+non-empty strings, and rejects `text` longer than 100,000 characters with
+`413` before running either signal. Otherwise, it runs the model signal and
+style signal. The two scores are combined, mapped to a guess and reader-facing
+label, and written to the audit log with a generated content ID.
 
-Malformed JSON or missing/invalid fields return `400`. If the detector model
-cannot be loaded, the route returns `503` with setup information. The response
-includes `content_id`, `guess`, `confidence` (the combined score), `label`,
+Malformed JSON or missing/invalid fields return `400`; oversized text returns
+`413` and is recorded as a rejection. If the detector model cannot be loaded,
+the route returns `503` with setup information. The response includes
+`content_id`, `guess`, `confidence` (the combined score), `label`,
 `model_score`, and `style_score`.
 
 `POST /appeal` takes `content_id` and non-empty `reasoning` strings. It
