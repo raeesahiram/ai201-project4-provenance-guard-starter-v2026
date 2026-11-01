@@ -481,21 +481,215 @@ and illustrates the risk of treating a score as proof of authorship.
 
 ## Run Log and Verdicts
 
-<!-- Your five criteria across three trials. `run_eval.py --label before`. -->
+Ran `python run_eval.py --label before` for three trials without changing the
+scenarios between trials. The complete JSON response and audit-log output for
+every case in every trial is in
+[`results/run_2026-11-01_1832_before.md`](./results/run_2026-11-01_1832_before.md).
+The report was produced by `run_eval.py::main`; submissions came from
+`app.py::submit`, appeals from `app.py::appeal`, and audit checks from
+`app.py::get_log`.
 
 | Criterion | Target | Run 1 | Run 2 | Run 3 | Verdict |
 |---|---|---|---|---|---|
-| 1.  |  |  |  |  |  |
-| 2.  |  |  |  |  |  |
-| 3.  |  |  |  |  |  |
-| 4.  |  |  |  |  |  |
-| 5.  |  |  |  |  |  |
+| 1. Human-writing false positives (synthetic proxy) | ≤ 1 AI guess of 10 | 0/10 | 0/10 | 0/10 | PROXY ONLY (NUMERIC MET) |
+| 2. Score spread | AI median ≥ 0.20 above human-style median | gap 0.1648 | gap 0.1648 | gap 0.1648 | PROXY ONLY (NUMERIC MISSED) |
+| 3. All three labels reachable | 3 of 3 labels | 3/3 | 3/3 | 3/3 | MET |
+| 4. Appeal changes status and is recorded | 3 of 3 appeals | 3/3 | 3/3 | 3/3 | MET |
+| 5. Invalid and oversized input is rejected and logged | 5 of 5 | 4/5 | 4/5 | 4/5 | MISSED |
 
-**Real output from one trial**, pasted as text, naming the file and function
-that produced it:
+The false-positive and score-spread human-style samples are synthetic
+instructor test fixtures, not the instructor's personal writing or verified
+human-authored work. Their results exercise the workflow but do not validate
+those authorship-dependent criteria. Criterion 2's observed median gap was
+below its unchanged 0.20 target. Criterion 5 missed because the 100,001-
+character request returned `200` and was logged as a decision instead of
+being rejected.
+
+**Actual JSON from Trial 1** (the linked report contains the complete output
+for every input in all three trials):
+
+Criterion 1 — first of ten synthetic human-style submissions:
 
 ```json
+{
+  "status": 200,
+  "response": {
+    "combined_score": 0.6013999999999999,
+    "confidence": 0.6013999999999999,
+    "content_id": "0acb3fae-70b2-4384-aa8b-b2c8cbc36b53",
+    "guess": "unsure",
+    "label": "The signals are inconclusive; this is not a determination of authorship.",
+    "model_score": 0.6824,
+    "style_score": 0.5204
+  }
+}
+```
 
+Criterion 2 — one AI-generated sample and one synthetic human-style sample:
+
+```json
+[
+  {
+    "status": 200,
+    "response": {
+      "combined_score": 0.50175,
+      "confidence": 0.50175,
+      "content_id": "73e7ab7c-4a10-412c-aced-8cccc577a86f",
+      "guess": "unsure",
+      "label": "The signals are inconclusive; this is not a determination of authorship.",
+      "model_score": 0.435,
+      "style_score": 0.5685
+    },
+    "group": "ai_generated"
+  },
+  {
+    "status": 200,
+    "response": {
+      "combined_score": 0.6013999999999999,
+      "confidence": 0.6013999999999999,
+      "content_id": "e6ef9ff7-aade-42b6-9f2b-f7bcc35f1de3",
+      "guess": "unsure",
+      "label": "The signals are inconclusive; this is not a determination of authorship.",
+      "model_score": 0.6824,
+      "style_score": 0.5204
+    },
+    "group": "human_style_synthetic"
+  }
+]
+```
+
+Criterion 3 — one response for each reachable label:
+
+```json
+[
+  {
+    "status": 200,
+    "response": {
+      "combined_score": 0.28375,
+      "confidence": 0.28375,
+      "content_id": "ca5ffa90-72a1-4f7c-9b0d-211dcbe77f33",
+      "guess": "human",
+      "label": "The signals suggest this text may be human-written; this is not proof of authorship.",
+      "model_score": 0.0675,
+      "style_score": 0.5
+    },
+    "sent": "Petrichor, susurrus, defenestration, ultracrepidarian, callipygian, susurration, apricity, and nudiu"
+  },
+  {
+    "status": 200,
+    "response": {
+      "combined_score": 0.50175,
+      "confidence": 0.50175,
+      "content_id": "d6c15d13-ac69-4e9b-87a5-a0b0457745b1",
+      "guess": "unsure",
+      "label": "The signals are inconclusive; this is not a determination of authorship.",
+      "model_score": 0.435,
+      "style_score": 0.5685
+    },
+    "sent": "A successful project begins with a clear plan. The plan identifies the main goal, breaks the work in"
+  },
+  {
+    "status": 200,
+    "response": {
+      "combined_score": 0.74905,
+      "confidence": 0.74905,
+      "content_id": "f2d6ae17-aff5-4ab2-a85a-3cf96d0bd84e",
+      "guess": "ai",
+      "label": "The signals suggest this text may be AI-generated; this is not proof of authorship.",
+      "model_score": 0.9853,
+      "style_score": 0.5128
+    },
+    "sent": "We the People of the United States, in Order to form a more perfect Union, establish Justice, insure"
+  }
+]
+```
+
+Criterion 4 — appeal response and audit evidence for a real content ID:
+
+```json
+{
+  "sent": "text length=139; creator_id=eval_appeal_t1_1",
+  "content_id": "186b55a0-affe-43af-9b0e-d38c5466b069",
+  "submission": {
+    "status": 200,
+    "response": {
+      "combined_score": 0.5468999999999999,
+      "confidence": 0.5468999999999999,
+      "content_id": "186b55a0-affe-43af-9b0e-d38c5466b069",
+      "guess": "unsure",
+      "label": "The signals are inconclusive; this is not a determination of authorship.",
+      "model_score": 0.6949,
+      "style_score": 0.3989
+    }
+  },
+  "audit_before_status": 200,
+  "audit_before_error": null,
+  "decision_before": {
+    "combined_score": 0.5468999999999999,
+    "content_id": "186b55a0-affe-43af-9b0e-d38c5466b069",
+    "creator_id": "eval_appeal_t1_1",
+    "guess": "unsure",
+    "label": "The signals are inconclusive; this is not a determination of authorship.",
+    "model_score": 0.6949,
+    "status": "decided",
+    "style_score": 0.3989,
+    "timestamp": "2026-11-01T23:32:51+00:00"
+  },
+  "appeal": {
+    "status": 200,
+    "response": {
+      "content_id": "186b55a0-affe-43af-9b0e-d38c5466b069",
+      "message": "Your appeal has been received and is under review.",
+      "status": "under_review"
+    }
+  },
+  "audit_after_status": 200,
+  "audit_after_error": null,
+  "decision_after": {
+    "combined_score": 0.5468999999999999,
+    "content_id": "186b55a0-affe-43af-9b0e-d38c5466b069",
+    "creator_id": "eval_appeal_t1_1",
+    "guess": "unsure",
+    "label": "The signals are inconclusive; this is not a determination of authorship.",
+    "model_score": 0.6949,
+    "status": "decided",
+    "style_score": 0.3989,
+    "timestamp": "2026-11-01T23:32:51+00:00"
+  },
+  "appeal_entry": {
+    "content_id": "186b55a0-affe-43af-9b0e-d38c5466b069",
+    "creator_id": "eval_appeal_t1_1",
+    "event": "appeal",
+    "reasoning": "This is a test appeal for an existing evaluation decision.",
+    "status": "under_review",
+    "timestamp": "2026-11-01T23:32:51+00:00"
+  },
+  "checks": {
+    "submission_succeeded": true,
+    "appeal_returned_200_under_review": true,
+    "appeal_was_appended": true,
+    "original_decision_unchanged": true
+  }
+}
+```
+
+Criterion 5 — the oversized request was accepted instead of rejected:
+
+```json
+{
+  "status": 200,
+  "sent": "text length=100001; creator_id=eval_bad_oversized",
+  "response": {
+    "combined_score": 0.5821500000000001,
+    "confidence": 0.5821500000000001,
+    "content_id": "24067fff-b0eb-4e84-838e-4031b5e3d4ef",
+    "guess": "unsure",
+    "label": "The signals are inconclusive; this is not a determination of authorship.",
+    "model_score": 0.9976,
+    "style_score": 0.1667
+  },
+  "rejection_entry": null
+}
 ```
 
 **Diagnoses**
@@ -514,7 +708,20 @@ that produced it:
 
      Look for a pattern. Five failures on one signal is one problem, not five. -->
 
+The score and label outcomes were identical across all three trials for the
+same inputs; content IDs and audit timestamps naturally differed. This run
+showed no score instability.
 
+Criterion 2 missed because the AI-generated and synthetic human-style groups
+had medians of 0.5740 and 0.4092, a 0.1648 gap rather than the required 0.20.
+The model signal and style signal together did not separate these fixtures
+enough; this is only a proxy result because the human-style samples are not
+verified human writing. Criterion 5 missed at the route: `app.py::submit`
+validates missing and blank text but does not enforce the criterion's
+100,000-character maximum, so the 100,001-character sample was scored and
+logged as a decision. Criterion 1's numeric count met the target on synthetic
+proxies, but cannot establish a false-positive rate on the instructor's own
+writing.
 
 ---
 
