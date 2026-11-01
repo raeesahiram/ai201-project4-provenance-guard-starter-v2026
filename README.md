@@ -416,6 +416,27 @@ nonzero scores and the expected label bands.
   the detected model-load race to add synchronization and rechecked
   concurrent submissions.
 
+**Moment 3 — Unit 8 evaluation and input validation**
+
+- *What I asked for:* Help fill the five acceptance-criterion scenarios,
+  exercise submissions, appeals, malformed requests, and score groups, then
+  follow the failed criterion's diagnosis for one improvement and compare
+  before and after.
+- *What came back:* The first set used synthetic human-style prose because I
+  did not have personal writing samples. The evaluation exposed a repeated
+  0.1648 score gap, an oversized-input acceptance, and the same surface-form
+  evasions and false positives in the attack run. It also suggested tracking
+  the appeal audit entries and comparing three trials automatically.
+- *What I changed:* I labeled the synthetic data as proxy-only rather than
+  claiming it measured personal-writing false positives. I extended
+  `run_eval.py` to exercise real appeal flows, verify their audit trail, score
+  each trial, and report all five criteria. Following the route diagnosis for
+  Criterion 5, I added a 100,000-character validation limit, then reran the
+  attack set and all five criteria three times. Criterion 5 improved from 4/5
+  to 5/5, while the score gap and attack outcomes were unchanged. I added the
+  measured before/after results and remaining failures to the README instead
+  of treating unchanged results as an improvement.
+
 <!-- ═══════════════════════ UNIT 8 — THE TEST ═══════════════════════ -->
 
 ---
@@ -838,21 +859,57 @@ pieces must split them; the service currently has no chunking workflow.
 
 ## What's Still Broken
 
-Criterion 1 remains unverified against real human writing: its synthetic proxy
-had zero AI guesses, but instructor-authored samples are needed before drawing
-an authorship conclusion. Criterion 2's synthetic proxy gap remains below
-target and likewise needs verified human writing. The 13 broken attacks remain
-the same: surface-form changes can move either signal and the equal-weight
-average below the AI threshold for AI-written text, while formal and repetitive
-human samples can still cross that threshold. The size fix does not address
-these signal and combining-rule failures. I stopped after the one route
-improvement so the before/after comparison isolates its effect.
+**Criteria still missed**
 
-**The trade I'd make if this ran for real:** I would prioritize avoiding false
-accusations by keeping an `unsure` band wide enough that borderline or
-formal-looking human writing is not labeled AI. The cost is that some
-AI-written text would also remain `unsure` or be missed, so the site would
-accept more missed detections to reduce harm to writers.
+- **Criterion 1 — personal-writing false positives:** The proxy got 0/10 AI
+  labels, but that cannot establish the target on the instructor's own
+  writing. I would rerun with ten real, non-sensitive samples the instructor
+  actually wrote and preserve their provenance; I stopped because no such
+  samples were provided, and substituting generated prose would make the
+  result misleading.
+- **Criterion 2 — score spread:** The proxy gap was 0.1648 in every trial,
+  below 0.20. I would gather a larger set of verified human and AI examples,
+  inspect signal-one and signal-two distributions, and calibrate the weights
+  against those examples; I stopped after one route-only change to isolate
+  its effect, and the available synthetic human-style group is not
+  authorship-ground-truth data.
+
+**Broken attacks still getting through**
+
+- **EV01, EV02, EV03, EV06, EV07 — style-signal evasion:** Typos, sentence
+  splitting, quotations, extreme sentence-length variation, and punctuation
+  padding change the features measured by signal two. I would test less
+  length-sensitive and manipulation-resistant style features against these
+  specific transformations; I stopped because changing the detector would be
+  a separate improvement and confound the input-limit before/after result.
+- **EV04, EV08 — model-signal evasion:** Unusual vocabulary and short input
+  reduce the model signal's ability to separate the AI-written attacks from
+  human text. I would evaluate calibration across token lengths and vocabulary
+  styles, and avoid treating the model score as authorship evidence; I stopped
+  because the chosen route fix did not alter model behavior.
+- **EV05, EV09 — both signals and combining rule:** Heavy editing and a human
+  opening paragraph change the observable text seen by both signals, and the
+  equal-weight mean leaves the results below the AI threshold. I would test
+  edited and mixed-origin samples and consider returning uncertainty rather
+  than claiming a reliable AI label; I stopped rather than reweight scores
+  without representative validation data.
+- **FP04, FP05, FP06, FP07 — false positives:** Formal essays, technical
+  documentation, templates, and deliberate repetition receive high model
+  scores; the style score does not pull the equal-weight combined score below
+  the AI threshold. I would calibrate a wider `unsure` band using verified
+  human-writing samples and add these genres to regression tests; I stopped
+  because moving thresholds would change the false-negative trade-off and
+  cannot be responsibly calibrated from synthetic proxies.
+
+I stopped after one change because the assignment asks for an isolated
+before/after comparison; the results show the limit fixed Criterion 5 but left
+these signal and calibration failures unchanged.
+
+**The trade I'd make if this ran for real:** I would widen the `unsure` band to
+reduce false AI accusations against human writers, even though more AI-written
+text would fall into `unsure` or escape an AI label. Writers bear the harm of
+false accusations under a narrow band; with a wider band, the site and its
+moderation team bear more missed detections and review work.
 
 
 
