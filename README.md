@@ -709,28 +709,31 @@ Criterion 5 — the oversized request was accepted instead of rejected:
 
      Look for a pattern. Five failures on one signal is one problem, not five. -->
 
-Criterion 1 is **MISSED / not validly tested**: the route returned 0 AI
-guesses for the ten synthetic human-style fixtures in each trial, but the
-criterion requires the instructor's own writing. The stage under test is the
-signals and their combination; synthetic prose cannot establish the false-
-positive rate on the required personal samples.
+Each criterion's verdict uses its stated target and requires the target to
+hold in all three trials:
 
-Criterion 2 is **MISSED** on the proxy data: the AI-generated and synthetic
-human-style groups had medians of 0.5740 and 0.4092, a 0.1648 gap rather than
-the required 0.20. The model signal and style signal overlap on these
-fixtures, and the 50/50 combining rule does not widen their median separation.
-Because the human-style group is not verified human writing, this is a
-workflow result rather than a valid authorship-grounded comparison.
+1. **MISSED — not validly tested.** The ten synthetic human-style fixtures
+   received 0 AI guesses in each trial, but the target requires the
+   instructor's own writing; the **signal one, signal two, and combining-rule**
+   stages cannot establish that false-positive rate from substitute prose.
+2. **MISSED on proxy data.** The AI-generated and synthetic human-style groups
+   had medians of 0.5740 and 0.4092, a 0.1648 gap in every trial, below the
+   0.20 target; **signal one and signal two overlap on these samples, and the
+   combining rule** does not widen their separation.
+3. **MET.** Each trial returned `human`, `unsure`, and `ai` for the three
+   probes, so the **label-mapping** stage reached all labels in all runs.
+4. **MET.** All three appeals in every trial returned 200 with
+   `under_review`, appeared after their decision entries, and left each
+   original entry unchanged; the **appeal route and audit-log** behavior met
+   the target in all runs.
+5. **MISSED.** Four of five inputs were rejected and logged in every trial,
+   but the 100,001-character input returned 200 and was logged as a decision;
+   the **route** has no 100,000-character maximum check, so it failed to reject
+   and audit this invalid input.
 
-Criterion 5 is **MISSED** at the **route**: `app.py::submit` validates missing
-and blank text but has no 100,000-character maximum check. It therefore scored
-the 100,001-character input and appended a `decided` entry instead of returning
-400/413 and writing a rejection entry.
-
-Criterion 3 (label mapping) and Criterion 4 (appeal route and append-only
-audit behavior) were MET in every trial. No score or label varied for the same
-inputs across the three trials; generated content IDs and audit timestamps
-naturally differed, so this run showed no score instability.
+The outcome counts were identical across all three trials; the returned scores
+and labels were stable for the same inputs. Generated content IDs and audit
+timestamps naturally differed, so this run showed no score instability.
 
 **Diagnoses — broken attacks**
 
